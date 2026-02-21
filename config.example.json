@@ -1,5 +1,5 @@
 {
   "node_host": "127.0.0.1",
   "node_port": 8114,
-  "dashboard_port": 3000
+  "dashboard_port": 8080
 }

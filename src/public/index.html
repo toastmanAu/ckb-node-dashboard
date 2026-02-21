@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CKB Node Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     :root {
       --bg:      #0d0f14;
@@ -27,11 +28,8 @@
     }
 
     header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 24px;
-      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 24px; border-bottom: 1px solid var(--border);
       background: var(--surface);
     }
     .header-left { display: flex; align-items: center; gap: 12px; }
@@ -56,9 +54,10 @@
 
     main { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
 
+    /* ── Stats grid ── */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       gap: 12px;
     }
     .stat-card {
@@ -73,11 +72,20 @@
     .stat-card.c2::before { background: var(--accent2); }
     .stat-card.cw::before { background: var(--warn); }
     .stat-card.cm::before { background: var(--muted); }
-    .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin-bottom: 8px; }
-    .stat-value { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1; transition: color .3s; }
+    .stat-card.cp::before { background: #b44eff; }
+    .stat-label {
+      font-size: 10px; text-transform: uppercase;
+      letter-spacing: 1.2px; color: var(--muted); margin-bottom: 8px;
+    }
+    .stat-value {
+      font-size: 26px; font-weight: 700; color: var(--text);
+      line-height: 1; transition: color .3s;
+    }
     .stat-value.flash { color: var(--accent) !important; }
     .stat-sub { margin-top: 6px; font-size: 11px; color: var(--muted); }
+    .stat-value.small { font-size: 18px; padding-top: 4px; }
 
+    /* ── Epoch ── */
     .epoch-card {
       background: var(--card-bg); border: 1px solid var(--border);
       border-radius: 10px; padding: 16px 20px;
@@ -89,9 +97,19 @@
     .track { width: 100%; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
     .fill  { height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); border-radius: 3px; transition: width .8s ease; }
 
+    /* ── Two-col layout ── */
     .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
 
+    /* ── Three-col charts ── */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
+
+    /* ── Panels ── */
     .panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
     .panel-header {
       display: flex; justify-content: space-between; align-items: center;
@@ -101,6 +119,14 @@
     .panel-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
     .panel-badge { font-size: 10px; background: var(--border); color: var(--muted); padding: 2px 8px; border-radius: 100px; }
 
+    .chart-panel {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden;
+    }
+    .chart-panel .panel-header { background: var(--surface); }
+    .chart-body { padding: 12px 14px 10px; position: relative; height: 190px; }
+
+    /* ── Scrollable lists ── */
     .scroll-list { max-height: 260px; overflow-y: auto; }
     .scroll-list::-webkit-scrollbar { width: 4px; }
     .scroll-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
@@ -120,10 +146,7 @@
     .btxs  { color: var(--text); font-size: 12px; text-align: right; }
     .bage  { color: var(--muted); font-size: 11px; text-align: right; }
 
-    .kv-row {
-      display: flex; justify-content: space-between;
-      padding: 9px 16px; border-bottom: 1px solid var(--border); align-items: center;
-    }
+    .kv-row { display: flex; justify-content: space-between; padding: 9px 16px; border-bottom: 1px solid var(--border); align-items: center; }
     .kv-row:last-child { border-bottom: none; }
     .kv-k { color: var(--muted); font-size: 12px; }
     .kv-v { font-weight: 600; }
@@ -167,13 +190,13 @@
 
 <div id="overlay">
   <div class="spinner"></div>
-  <div class="ov-text" id="ov-msg">Connecting to node…</div>
+  <div class="ov-text" id="ov-msg">Loading node data…</div>
 </div>
 
 <header>
   <div class="header-left">
     <div class="logo">CKB<span> Node</span></div>
-    <div class="chain-badge">Mainnet</div>
+    <div class="chain-badge" id="chain-badge">Mainnet</div>
   </div>
   <div>
     <span class="status-dot" id="sdot"></span>
@@ -182,6 +205,8 @@
 </header>
 
 <main>
+
+  <!-- Stats row -->
   <div class="stats-grid">
     <div class="stat-card">
       <div class="stat-label">Block Height</div>
@@ -199,17 +224,23 @@
       <div class="stat-sub">connected</div>
     </div>
     <div class="stat-card cm">
-      <div class="stat-label">Pending TXs</div>
+      <div class="stat-label">Mempool</div>
       <div class="stat-value" id="s-pending">—</div>
-      <div class="stat-sub">in mempool</div>
+      <div class="stat-sub">pending txs</div>
     </div>
     <div class="stat-card cm">
       <div class="stat-label">Avg Block Time</div>
-      <div class="stat-value" id="s-interval" style="font-size:20px;padding-top:4px">—</div>
-      <div class="stat-sub">last 10 blocks</div>
+      <div class="stat-value small" id="s-interval">—</div>
+      <div class="stat-sub">last 20 blocks</div>
+    </div>
+    <div class="stat-card cp">
+      <div class="stat-label">Network Hashrate</div>
+      <div class="stat-value small" id="s-hashrate">—</div>
+      <div class="stat-sub">est. current</div>
     </div>
   </div>
 
+  <!-- Epoch progress -->
   <div class="epoch-card">
     <div class="epoch-header">
       <div class="epoch-title">Epoch Progress</div>
@@ -218,11 +249,37 @@
     <div class="track"><div class="fill" id="epoch-bar" style="width:0%"></div></div>
   </div>
 
+  <!-- Charts row -->
+  <div class="chart-grid">
+    <div class="chart-panel">
+      <div class="panel-header">
+        <div class="panel-title">Block Time · last 60 blocks</div>
+        <div class="panel-badge" id="bt-avg-badge">avg —s</div>
+      </div>
+      <div class="chart-body"><canvas id="chart-blocktime"></canvas></div>
+    </div>
+    <div class="chart-panel">
+      <div class="panel-header">
+        <div class="panel-title">TX per Block · last 30 blocks</div>
+        <div class="panel-badge" id="tx-avg-badge">avg —</div>
+      </div>
+      <div class="chart-body"><canvas id="chart-txperblock"></canvas></div>
+    </div>
+    <div class="chart-panel">
+      <div class="panel-header">
+        <div class="panel-title">Network Hashrate · est. TH/s</div>
+        <div class="panel-badge" id="hr-cur-badge">—</div>
+      </div>
+      <div class="chart-body"><canvas id="chart-hashrate"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Block list + side panels -->
   <div class="two-col">
     <div class="panel">
       <div class="panel-header">
         <div class="panel-title">Recent Blocks</div>
-        <div class="panel-badge">● live</div>
+        <div class="panel-badge" id="block-badge">● live</div>
       </div>
       <div class="scroll-list" id="block-list">
         <div style="padding:20px;color:var(--muted);text-align:center">Loading…</div>
@@ -250,30 +307,155 @@
       </div>
     </div>
   </div>
-</main>
 
-<footer id="footer">CKB Node Dashboard · <span id="node-addr">—</span> · polling every 5s</footer>
+</main>
+<footer>CKB Node Monitor · node 192.168.68.87 · polling every 5s</footer>
 
 <script>
   const RPC = '/rpc';
-  let reqId = 1, lastHeight = null, recentBlocks = [], blockTimestamps = [], pollFails = 0;
+  let reqId = 1;
+  let lastHeight = null;
+  let recentBlocks = [];
+  let blockTimestamps = [];
+  let pollFails = 0;
 
-  const hex  = h => parseInt(h, 16);
-  const fmt  = n => n.toLocaleString();
+  // ── Chart instances ───────────────────────────────────────────────────────
+  let btChart  = null;   // block time
+  let txChart  = null;   // tx per block
+  let hrChart  = null;   // hashrate
+
+  const CHART_OPTS_BASE = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 400 },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1a202e',
+        borderColor: '#252b38',
+        borderWidth: 1,
+        titleColor: '#64748b',
+        bodyColor: '#e2e8f0',
+      },
+    },
+    scales: {
+      x: {
+        display: false,
+        grid: { color: '#252b38' },
+      },
+      y: {
+        display: true,
+        grid: { color: '#1e2535' },
+        ticks: { color: '#64748b', font: { size: 10 } },
+        border: { color: '#252b38' },
+      },
+    },
+  };
+
+  function mkLineChart(ctx, color, yLabel) {
+    return new Chart(ctx, {
+      type: 'line',
+      data: { labels: [], datasets: [{ data: [], borderColor: color, backgroundColor: color + '18', borderWidth: 2, pointRadius: 0, pointHoverRadius: 3, fill: true, tension: 0.3 }] },
+      options: {
+        ...CHART_OPTS_BASE,
+        scales: {
+          ...CHART_OPTS_BASE.scales,
+          y: { ...CHART_OPTS_BASE.scales.y, title: { display: false } },
+        },
+      },
+    });
+  }
+
+  function mkBarChart(ctx, color) {
+    return new Chart(ctx, {
+      type: 'bar',
+      data: { labels: [], datasets: [{ data: [], backgroundColor: color + '99', borderColor: color, borderWidth: 1, borderRadius: 2 }] },
+      options: {
+        ...CHART_OPTS_BASE,
+        scales: {
+          ...CHART_OPTS_BASE.scales,
+          y: { ...CHART_OPTS_BASE.scales.y, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  function initCharts() {
+    btChart = mkLineChart(document.getElementById('chart-blocktime').getContext('2d'), '#3bc67a');
+    txChart = mkBarChart(document.getElementById('chart-txperblock').getContext('2d'), '#4a9eff');
+    hrChart = mkLineChart(document.getElementById('chart-hashrate').getContext('2d'), '#b44eff');
+  }
+
+  // ── RPC ───────────────────────────────────────────────────────────────────
+  async function rpc(method, params = []) {
+    const r = await fetch(RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: reqId++, method, params }),
+    });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error.message);
+    return j.result;
+  }
+
+  // ── History fetch ─────────────────────────────────────────────────────────
+  async function fetchHistory() {
+    const r = await fetch('/history');
+    if (!r.ok) throw new Error('history ' + r.status);
+    return r.json();
+  }
+
+  // ── Update charts from history ────────────────────────────────────────────
+  function updateCharts(hist) {
+    const blocks = hist.blocks || [];
+
+    // Block time chart (all 60)
+    const btData = blocks.map(b => ({ x: '#' + b.number, y: +(b.blockTime / 1000).toFixed(2) }));
+    btChart.data.labels   = btData.map(d => d.x);
+    btChart.data.datasets[0].data = btData.map(d => d.y);
+    btChart.update('none');
+
+    // Avg badge
+    const avgBt = btData.length ? (btData.reduce((s, d) => s + d.y, 0) / btData.length).toFixed(1) : '—';
+    document.getElementById('bt-avg-badge').textContent = 'avg ' + avgBt + 's';
+
+    // TX per block chart (last 30 that have tx data)
+    const txBlocks = blocks.filter(b => b.txCount !== null).slice(-30);
+    const txData   = txBlocks.map(b => ({ x: '#' + b.number, y: b.txCount }));
+    txChart.data.labels   = txData.map(d => d.x);
+    txChart.data.datasets[0].data = txData.map(d => d.y);
+    txChart.update('none');
+
+    const avgTx = txData.length ? (txData.reduce((s, d) => s + d.y, 0) / txData.length).toFixed(1) : '—';
+    document.getElementById('tx-avg-badge').textContent = 'avg ' + avgTx;
+
+    // Hashrate chart
+    const hrData = (hist.hashratePerBlock || []).map(h => ({ x: '#' + h.number, y: +(h.hashrate).toFixed(1) }));
+    hrChart.data.labels   = hrData.map(d => d.x);
+    hrChart.data.datasets[0].data = hrData.map(d => d.y);
+    hrChart.update('none');
+
+    const latestHr = hrData.length ? hrData[hrData.length - 1].y : '—';
+    document.getElementById('hr-cur-badge').textContent = latestHr + (latestHr !== '—' ? ' TH/s' : '');
+
+    // Top-level hashrate stat card
+    document.getElementById('s-hashrate').textContent = hist.networkHashrate || '—';
+  }
+
+  // ── Formatting ────────────────────────────────────────────────────────────
+  const hex = h => parseInt(h, 16);
+  const fmt = n => n.toLocaleString();
 
   function parseEpoch(h) {
     const v = BigInt(h);
-    return {
-      number: Number(v & 0x00FFFFFFn),
-      index:  Number((v >> 24n) & 0xFFFFn),
-      length: Number((v >> 40n) & 0xFFFFn),
-    };
+    return { number: Number(v & 0x00FFFFFFn), index: Number((v >> 24n) & 0xFFFFn), length: Number((v >> 40n) & 0xFFFFn) };
   }
 
   function timeAgo(ts) {
     const s = Math.floor((Date.now() - ts) / 1000);
     if (s < 2)   return 'just now';
     if (s < 60)  return s + 's ago';
+    if (s < 120) return '1m ago';
     return Math.floor(s / 60) + 'm ago';
   }
 
@@ -285,6 +467,7 @@
 
   function shortHash(h) { return h.slice(0, 10) + '…' + h.slice(-6); }
 
+  // ── Status bar ────────────────────────────────────────────────────────────
   function setStatus(state, text) {
     document.getElementById('sdot').className   = 'status-dot ' + state;
     document.getElementById('stxt').textContent = text;
@@ -292,31 +475,20 @@
 
   function flash(id) {
     const el = document.getElementById(id);
-    el.classList.remove('flash');
-    void el.offsetWidth;
-    el.classList.add('flash');
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
     setTimeout(() => el.classList.remove('flash'), 800);
   }
 
-  async function rpc(method, params = []) {
-    const r = await fetch(RPC, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: reqId++, method, params })
-    });
-    const j = await r.json();
-    if (j.error) throw new Error(j.error.message);
-    return j.result;
-  }
-
+  // ── Block list ────────────────────────────────────────────────────────────
   function renderBlocks() {
     document.getElementById('block-list').innerHTML = recentBlocks.map((b, i) => `
       <div class="block-row${i === 0 && b.isNew ? ' new-block' : ''}">
         <div class="bnum">#${fmt(b.number)}</div>
         <div class="bhash" title="${b.hash}">${shortHash(b.hash)}</div>
-        <div class="btxs">—</div>
+        <div class="btxs">${b.txs !== null ? b.txs + ' tx' : '—'}</div>
         <div class="bage">${timeAgo(b.timestamp)}</div>
-      </div>`).join('');
+      </div>
+    `).join('');
   }
 
   async function loadInitialBlocks(tipNum) {
@@ -327,8 +499,7 @@
       )
     );
     recentBlocks = results.reverse().filter(Boolean).map(h => ({
-      number: hex(h.number), hash: h.hash,
-      timestamp: hex(h.timestamp), isNew: false,
+      number: hex(h.number), hash: h.hash, timestamp: hex(h.timestamp), txs: null, isNew: false,
     }));
     blockTimestamps = recentBlocks.map(b => b.timestamp).reverse();
     renderBlocks();
@@ -348,19 +519,20 @@
   function updateAvgInterval() {
     if (blockTimestamps.length < 2) return;
     const diffs = [];
-    for (let i = 1; i < blockTimestamps.length; i++)
-      diffs.push(blockTimestamps[i] - blockTimestamps[i - 1]);
+    for (let i = 1; i < blockTimestamps.length; i++) diffs.push(blockTimestamps[i] - blockTimestamps[i - 1]);
     const avg = diffs.reduce((a, b) => a + b, 0) / diffs.length;
     document.getElementById('s-interval').textContent = (avg / 1000).toFixed(1) + 's';
   }
 
+  // ── Main poll: tip ────────────────────────────────────────────────────────
   async function pollTip() {
     const header = await rpc('get_tip_header');
     const height = hex(header.number);
     if (height !== lastHeight) {
       const isFirst = lastHeight === null;
       if (!isFirst) {
-        recentBlocks.unshift({ number: height, hash: header.hash, timestamp: hex(header.timestamp), isNew: true });
+        const newBlock = { number: height, hash: header.hash, timestamp: hex(header.timestamp), txs: null, isNew: true };
+        recentBlocks.unshift(newBlock);
         if (recentBlocks.length > 20) recentBlocks.pop();
         blockTimestamps.push(hex(header.timestamp));
         if (blockTimestamps.length > 10) blockTimestamps.shift();
@@ -377,12 +549,15 @@
     }
   }
 
+  // ── Slow poll: peers + pool (every 30s) ───────────────────────────────────
   async function pollExtras() {
     const [peers, pool] = await Promise.all([rpc('get_peers'), rpc('tx_pool_info')]);
+    const pc = peers.length;
+    document.getElementById('s-peers').textContent     = pc;
+    document.getElementById('peer-badge').textContent  = pc;
 
-    document.getElementById('s-peers').textContent    = peers.length;
-    document.getElementById('peer-badge').textContent = peers.length;
-    document.getElementById('peer-list').innerHTML = peers.length === 0
+    const peerList = document.getElementById('peer-list');
+    peerList.innerHTML = peers.length === 0
       ? '<div style="padding:16px;color:var(--muted);text-align:center">No peers</div>'
       : peers.map(p => {
           const raw  = p.addresses?.[0]?.address ?? '';
@@ -390,7 +565,7 @@
           const sync = p.sync_state;
           const diff = sync ? hex(sync.best_known_header_number) - hex(sync.last_common_header_number) : 0;
           return `<div class="peer-row">
-            <div class="paddr" title="${raw}">${ip || raw.slice(0,30)}</div>
+            <div class="paddr" title="${raw}">${ip || raw.slice(0, 30)}</div>
             <div class="psync ${diff > 5 ? 'sbeh' : 'sok'}">${diff > 5 ? diff + ' behind' : 'synced'}</div>
           </div>`;
         }).join('');
@@ -405,24 +580,30 @@
     document.getElementById('s-pending').textContent  = pend;
   }
 
-  async function init() {
-    // Load node address from server config
+  // ── History poll (every 60s) ──────────────────────────────────────────────
+  async function pollHistory() {
     try {
-      const cfg = await fetch('/config').then(r => r.json());
-      document.getElementById('node-addr').textContent  = `${cfg.node_host}:${cfg.node_port}`;
-      document.getElementById('stxt').textContent = `Connecting to ${cfg.node_host}…`;
-    } catch(e) {}
+      const hist = await fetchHistory();
+      updateCharts(hist);
+    } catch(e) {
+      console.warn('history fetch failed:', e.message);
+    }
+  }
 
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  async function init() {
+    initCharts();
     try {
       await pollTip();
-      await pollExtras();
-      setStatus('ok', 'Connected');
+      await Promise.all([pollExtras(), pollHistory()]);
+      setStatus('ok', 'Connected · 192.168.68.87');
       document.getElementById('overlay').classList.add('gone');
       pollFails = 0;
-    } catch (e) {
+    } catch(e) {
       pollFails++;
-      document.getElementById('ov-msg').textContent = `Cannot reach node — ${e.message}`;
+      document.getElementById('ov-msg').textContent = 'Cannot reach node — retrying…';
       setStatus('error', 'Connection failed');
+      console.error(e);
     }
   }
 
@@ -431,10 +612,10 @@
       await pollTip();
       if (pollFails > 0) {
         pollFails = 0;
-        setStatus('ok', 'Connected');
+        setStatus('ok', 'Connected · 192.168.68.87');
         document.getElementById('overlay').classList.add('gone');
       }
-    } catch (e) {
+    } catch(e) {
       if (++pollFails >= 3) {
         setStatus('error', 'Node unreachable');
         document.getElementById('overlay').classList.remove('gone');
@@ -443,10 +624,13 @@
     }
   }
 
+  // Refresh block age labels every 5s
   setInterval(renderBlocks, 5000);
+
   init().then(() => {
     setInterval(tipLoop,    5000);
     setInterval(pollExtras, 30000);
+    setInterval(pollHistory, 60000);
   });
 </script>
 </body>

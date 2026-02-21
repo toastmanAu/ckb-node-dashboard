@@ -31,8 +31,8 @@ read -rp "CKB node RPC port [8114]: " NODE_PORT
 NODE_PORT="${NODE_PORT:-8114}"
 
 # ── Dashboard port ────────────────────────────────────────────────────────────
-read -rp "Dashboard web port [3000]: " DASH_PORT
-DASH_PORT="${DASH_PORT:-3000}"
+read -rp "Dashboard web port [8080]: " DASH_PORT
+DASH_PORT="${DASH_PORT:-8080}"
 
 # ── Verify node is reachable ──────────────────────────────────────────────────
 echo ""
