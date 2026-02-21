@@ -15,7 +15,14 @@ const fs   = require('fs');
 const path = require('path');
 
 // ── Crash guards — log and survive rather than die ────────────────────────────
-process.on('uncaughtException',  (err)    => console.error('[uncaughtException]',  new Date().toISOString(), err.message));
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', new Date().toISOString(), err.message);
+  // Port conflict or bind error — can't recover, exit cleanly
+  if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
+    console.error('[fatal] Cannot bind port — exiting.');
+    process.exit(1);
+  }
+});
 process.on('unhandledRejection', (reason) => console.error('[unhandledRejection]', new Date().toISOString(), reason?.message ?? reason));
 
 // ── Config ────────────────────────────────────────────────────────────────────
