@@ -9,6 +9,10 @@ const http = require('http');
 const fs   = require('fs');
 const path = require('path');
 
+// ── Crash guards — log and survive rather than die ────────────────────────────
+process.on('uncaughtException',  (err)    => console.error('[uncaughtException]',  new Date().toISOString(), err.message));
+process.on('unhandledRejection', (reason) => console.error('[unhandledRejection]', new Date().toISOString(), reason?.message ?? reason));
+
 // ── Config ────────────────────────────────────────────────────────────────────
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 
@@ -109,6 +113,12 @@ const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', d => { body += d; if (body.length > 65536) req.destroy(); });
     req.on('end',  ()  => proxyRpc(body, res));
+    return;
+  }
+
+  if (req.url === '/health' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, uptime: Math.floor(process.uptime()) }));
     return;
   }
 
