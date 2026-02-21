@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CKB Node Monitor</title>
+  <style>
+    :root {
+      --bg:      #0d0f14;
+      --surface: #161a22;
+      --border:  #252b38;
+      --accent:  #3bc67a;
+      --accent2: #4a9eff;
+      --warn:    #f5a623;
+      --danger:  #e74c3c;
+      --text:    #e2e8f0;
+      --muted:   #64748b;
+      --card-bg: #1a202e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 13px;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .logo { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; color: var(--accent); }
+    .logo span { color: var(--text); }
+    .chain-badge {
+      background: #1a2e1f; color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 2px 10px; border-radius: 100px;
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 1px;
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--muted); display: inline-block;
+      margin-right: 6px; transition: background 0.3s;
+    }
+    .status-dot.ok    { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 2s infinite; }
+    .status-dot.error { background: var(--danger); }
+    @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.5} }
+    .status-text { color: var(--muted); font-size: 12px; }
+
+    main { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+    }
+    .stat-card {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px;
+      position: relative; overflow: hidden;
+    }
+    .stat-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--accent); opacity: .5;
+    }
+    .stat-card.c2::before { background: var(--accent2); }
+    .stat-card.cw::before { background: var(--warn); }
+    .stat-card.cm::before { background: var(--muted); }
+    .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin-bottom: 8px; }
+    .stat-value { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1; transition: color .3s; }
+    .stat-value.flash { color: var(--accent) !important; }
+    .stat-sub { margin-top: 6px; font-size: 11px; color: var(--muted); }
+
+    .epoch-card {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px 20px;
+    }
+    .epoch-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+    .epoch-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); }
+    .epoch-nums  { font-size: 13px; color: var(--text); }
+    .epoch-nums .em { color: var(--accent2); font-weight: 600; }
+    .track { width: 100%; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .fill  { height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); border-radius: 3px; transition: width .8s ease; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+
+    .panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .panel-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .panel-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+    .panel-badge { font-size: 10px; background: var(--border); color: var(--muted); padding: 2px 8px; border-radius: 100px; }
+
+    .scroll-list { max-height: 260px; overflow-y: auto; }
+    .scroll-list::-webkit-scrollbar { width: 4px; }
+    .scroll-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .block-row {
+      display: grid; grid-template-columns: 100px 1fr 70px 70px;
+      gap: 8px; padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      align-items: center; transition: background .15s;
+    }
+    .block-row:last-child { border-bottom: none; }
+    .block-row:hover { background: rgba(255,255,255,.02); }
+    .block-row.new-block { animation: newb 1.2s ease-out; }
+    @keyframes newb { from { background: rgba(59,198,122,.15); } to { background: transparent; } }
+    .bnum  { color: var(--accent); font-weight: 600; }
+    .bhash { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .btxs  { color: var(--text); font-size: 12px; text-align: right; }
+    .bage  { color: var(--muted); font-size: 11px; text-align: right; }
+
+    .kv-row {
+      display: flex; justify-content: space-between;
+      padding: 9px 16px; border-bottom: 1px solid var(--border); align-items: center;
+    }
+    .kv-row:last-child { border-bottom: none; }
+    .kv-k { color: var(--muted); font-size: 12px; }
+    .kv-v { font-weight: 600; }
+    .kv-v.g { color: var(--accent); }
+    .kv-v.w { color: var(--warn); }
+
+    .peer-row {
+      display: grid; grid-template-columns: 1fr 80px;
+      gap: 8px; padding: 7px 16px;
+      border-bottom: 1px solid var(--border); font-size: 11px; align-items: center;
+    }
+    .peer-row:last-child { border-bottom: none; }
+    .paddr { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .psync { text-align: right; }
+    .sok   { color: var(--accent); }
+    .sbeh  { color: var(--warn); }
+
+    footer {
+      padding: 10px 24px; text-align: center;
+      color: var(--muted); font-size: 11px;
+      border-top: 1px solid var(--border);
+    }
+
+    #overlay {
+      position: fixed; inset: 0;
+      background: rgba(13,15,20,.92);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100; flex-direction: column; gap: 16px;
+    }
+    #overlay.gone { display: none; }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .ov-text { color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<div id="overlay">
+  <div class="spinner"></div>
+  <div class="ov-text" id="ov-msg">Connecting to node…</div>
+</div>
+
+<header>
+  <div class="header-left">
+    <div class="logo">CKB<span> Node</span></div>
+    <div class="chain-badge">Mainnet</div>
+  </div>
+  <div>
+    <span class="status-dot" id="sdot"></span>
+    <span class="status-text" id="stxt">Connecting…</span>
+  </div>
+</header>
+
+<main>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Block Height</div>
+      <div class="stat-value" id="s-height">—</div>
+      <div class="stat-sub" id="s-blocktime">—</div>
+    </div>
+    <div class="stat-card c2">
+      <div class="stat-label">Epoch</div>
+      <div class="stat-value" id="s-epoch">—</div>
+      <div class="stat-sub" id="s-epochsub">—</div>
+    </div>
+    <div class="stat-card cw">
+      <div class="stat-label">Peers</div>
+      <div class="stat-value" id="s-peers">—</div>
+      <div class="stat-sub">connected</div>
+    </div>
+    <div class="stat-card cm">
+      <div class="stat-label">Pending TXs</div>
+      <div class="stat-value" id="s-pending">—</div>
+      <div class="stat-sub">in mempool</div>
+    </div>
+    <div class="stat-card cm">
+      <div class="stat-label">Avg Block Time</div>
+      <div class="stat-value" id="s-interval" style="font-size:20px;padding-top:4px">—</div>
+      <div class="stat-sub">last 10 blocks</div>
+    </div>
+  </div>
+
+  <div class="epoch-card">
+    <div class="epoch-header">
+      <div class="epoch-title">Epoch Progress</div>
+      <div class="epoch-nums" id="epoch-label">—</div>
+    </div>
+    <div class="track"><div class="fill" id="epoch-bar" style="width:0%"></div></div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Recent Blocks</div>
+        <div class="panel-badge">● live</div>
+      </div>
+      <div class="scroll-list" id="block-list">
+        <div style="padding:20px;color:var(--muted);text-align:center">Loading…</div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="panel">
+        <div class="panel-header"><div class="panel-title">TX Pool</div></div>
+        <div class="kv-row"><span class="kv-k">Pending</span><span class="kv-v g" id="p-pending">—</span></div>
+        <div class="kv-row"><span class="kv-k">Proposed</span><span class="kv-v" id="p-proposed">—</span></div>
+        <div class="kv-row"><span class="kv-k">Orphan</span><span class="kv-v" id="p-orphan">—</span></div>
+        <div class="kv-row"><span class="kv-k">Total size</span><span class="kv-v" id="p-size">—</span></div>
+        <div class="kv-row"><span class="kv-k">Min fee rate</span><span class="kv-v" id="p-fee">—</span></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Peers</div>
+          <div class="panel-badge" id="peer-badge">0</div>
+        </div>
+        <div class="scroll-list" style="max-height:200px" id="peer-list">
+          <div style="padding:16px;color:var(--muted);text-align:center">Loading…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer id="footer">CKB Node Dashboard · <span id="node-addr">—</span> · polling every 5s</footer>
+
+<script>
+  const RPC = '/rpc';
+  let reqId = 1, lastHeight = null, recentBlocks = [], blockTimestamps = [], pollFails = 0;
+
+  const hex  = h => parseInt(h, 16);
+  const fmt  = n => n.toLocaleString();
+
+  function parseEpoch(h) {
+    const v = BigInt(h);
+    return {
+      number: Number(v & 0x00FFFFFFn),
+      index:  Number((v >> 24n) & 0xFFFFn),
+      length: Number((v >> 40n) & 0xFFFFn),
+    };
+  }
+
+  function timeAgo(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 2)   return 'just now';
+    if (s < 60)  return s + 's ago';
+    return Math.floor(s / 60) + 'm ago';
+  }
+
+  function fmtBytes(n) {
+    if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    if (n >= 1024)    return (n / 1024).toFixed(1) + ' KB';
+    return n + ' B';
+  }
+
+  function shortHash(h) { return h.slice(0, 10) + '…' + h.slice(-6); }
+
+  function setStatus(state, text) {
+    document.getElementById('sdot').className   = 'status-dot ' + state;
+    document.getElementById('stxt').textContent = text;
+  }
+
+  function flash(id) {
+    const el = document.getElementById(id);
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+    setTimeout(() => el.classList.remove('flash'), 800);
+  }
+
+  async function rpc(method, params = []) {
+    const r = await fetch(RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: reqId++, method, params })
+    });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error.message);
+    return j.result;
+  }
+
+  function renderBlocks() {
+    document.getElementById('block-list').innerHTML = recentBlocks.map((b, i) => `
+      <div class="block-row${i === 0 && b.isNew ? ' new-block' : ''}">
+        <div class="bnum">#${fmt(b.number)}</div>
+        <div class="bhash" title="${b.hash}">${shortHash(b.hash)}</div>
+        <div class="btxs">—</div>
+        <div class="bage">${timeAgo(b.timestamp)}</div>
+      </div>`).join('');
+  }
+
+  async function loadInitialBlocks(tipNum) {
+    const start = Math.max(0, tipNum - 9);
+    const results = await Promise.all(
+      Array.from({ length: tipNum - start + 1 }, (_, i) =>
+        rpc('get_header_by_number', ['0x' + (start + i).toString(16)])
+      )
+    );
+    recentBlocks = results.reverse().filter(Boolean).map(h => ({
+      number: hex(h.number), hash: h.hash,
+      timestamp: hex(h.timestamp), isNew: false,
+    }));
+    blockTimestamps = recentBlocks.map(b => b.timestamp).reverse();
+    renderBlocks();
+  }
+
+  function updateEpoch(epochHex) {
+    const e = parseEpoch(epochHex);
+    document.getElementById('s-epoch').textContent    = fmt(e.number);
+    document.getElementById('s-epochsub').textContent = `block ${fmt(e.index)} of ${fmt(e.length)}`;
+    const pct = e.length > 0 ? ((e.index / e.length) * 100).toFixed(1) : 0;
+    document.getElementById('epoch-bar').style.width  = pct + '%';
+    document.getElementById('epoch-label').innerHTML  =
+      `Epoch <span class="em">#${fmt(e.number)}</span> &nbsp;·&nbsp; ` +
+      `${fmt(e.index)} / ${fmt(e.length)} &nbsp;·&nbsp; <span class="em">${pct}%</span>`;
+  }
+
+  function updateAvgInterval() {
+    if (blockTimestamps.length < 2) return;
+    const diffs = [];
+    for (let i = 1; i < blockTimestamps.length; i++)
+      diffs.push(blockTimestamps[i] - blockTimestamps[i - 1]);
+    const avg = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+    document.getElementById('s-interval').textContent = (avg / 1000).toFixed(1) + 's';
+  }
+
+  async function pollTip() {
+    const header = await rpc('get_tip_header');
+    const height = hex(header.number);
+    if (height !== lastHeight) {
+      const isFirst = lastHeight === null;
+      if (!isFirst) {
+        recentBlocks.unshift({ number: height, hash: header.hash, timestamp: hex(header.timestamp), isNew: true });
+        if (recentBlocks.length > 20) recentBlocks.pop();
+        blockTimestamps.push(hex(header.timestamp));
+        if (blockTimestamps.length > 10) blockTimestamps.shift();
+        flash('s-height');
+        setTimeout(() => { if (recentBlocks[0]) recentBlocks[0].isNew = false; }, 1500);
+      }
+      lastHeight = height;
+      document.getElementById('s-height').textContent    = fmt(height);
+      document.getElementById('s-blocktime').textContent = 'at ' + new Date(hex(header.timestamp)).toLocaleTimeString();
+      updateEpoch(header.epoch);
+      updateAvgInterval();
+      renderBlocks();
+      if (isFirst) await loadInitialBlocks(height);
+    }
+  }
+
+  async function pollExtras() {
+    const [peers, pool] = await Promise.all([rpc('get_peers'), rpc('tx_pool_info')]);
+
+    document.getElementById('s-peers').textContent    = peers.length;
+    document.getElementById('peer-badge').textContent = peers.length;
+    document.getElementById('peer-list').innerHTML = peers.length === 0
+      ? '<div style="padding:16px;color:var(--muted);text-align:center">No peers</div>'
+      : peers.map(p => {
+          const raw  = p.addresses?.[0]?.address ?? '';
+          const ip   = raw.replace(/\/p2p\/.+$/, '').replace(/^\/ip[46]\//, '').replace(/\/tcp\/(\d+)$/, ':$1');
+          const sync = p.sync_state;
+          const diff = sync ? hex(sync.best_known_header_number) - hex(sync.last_common_header_number) : 0;
+          return `<div class="peer-row">
+            <div class="paddr" title="${raw}">${ip || raw.slice(0,30)}</div>
+            <div class="psync ${diff > 5 ? 'sbeh' : 'sok'}">${diff > 5 ? diff + ' behind' : 'synced'}</div>
+          </div>`;
+        }).join('');
+
+    const pend = hex(pool.pending);
+    document.getElementById('p-pending').textContent  = pend;
+    document.getElementById('p-pending').className    = 'kv-v ' + (pend > 20 ? 'w' : 'g');
+    document.getElementById('p-proposed').textContent = hex(pool.proposed);
+    document.getElementById('p-orphan').textContent   = hex(pool.orphan);
+    document.getElementById('p-size').textContent     = fmtBytes(hex(pool.total_tx_size));
+    document.getElementById('p-fee').textContent      = hex(pool.min_fee_rate) + ' shan/kB';
+    document.getElementById('s-pending').textContent  = pend;
+  }
+
+  async function init() {
+    // Load node address from server config
+    try {
+      const cfg = await fetch('/config').then(r => r.json());
+      document.getElementById('node-addr').textContent  = `${cfg.node_host}:${cfg.node_port}`;
+      document.getElementById('stxt').textContent = `Connecting to ${cfg.node_host}…`;
+    } catch(e) {}
+
+    try {
+      await pollTip();
+      await pollExtras();
+      setStatus('ok', 'Connected');
+      document.getElementById('overlay').classList.add('gone');
+      pollFails = 0;
+    } catch (e) {
+      pollFails++;
+      document.getElementById('ov-msg').textContent = `Cannot reach node — ${e.message}`;
+      setStatus('error', 'Connection failed');
+    }
+  }
+
+  async function tipLoop() {
+    try {
+      await pollTip();
+      if (pollFails > 0) {
+        pollFails = 0;
+        setStatus('ok', 'Connected');
+        document.getElementById('overlay').classList.add('gone');
+      }
+    } catch (e) {
+      if (++pollFails >= 3) {
+        setStatus('error', 'Node unreachable');
+        document.getElementById('overlay').classList.remove('gone');
+        document.getElementById('ov-msg').textContent = 'Lost connection — retrying…';
+      }
+    }
+  }
+
+  setInterval(renderBlocks, 5000);
+  init().then(() => {
+    setInterval(tipLoop,    5000);
+    setInterval(pollExtras, 30000);
+  });
+</script>
+</body>
+</html>
