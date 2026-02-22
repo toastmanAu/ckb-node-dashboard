@@ -347,6 +347,11 @@
       <div class="stat-sub">active connections</div>
     </div>
     <div class="stat-card csolo">
+      <div class="stat-label">Total Hashrate</div>
+      <div class="stat-value small" id="mine-hashrate">—</div>
+      <div class="stat-sub">estimated from shares</div>
+    </div>
+    <div class="stat-card csolo">
       <div class="stat-label">Shares Accepted</div>
       <div class="stat-value" id="mine-accepted">—</div>
       <div class="stat-sub" id="mine-sharerates">submitted / rejected</div>
@@ -355,11 +360,6 @@
       <div class="stat-label">Blocks Found</div>
       <div class="stat-value" id="mine-blocks">—</div>
       <div class="stat-sub" id="mine-uptime">—</div>
-    </div>
-    <div class="stat-card csolo">
-      <div class="stat-label">Work ID</div>
-      <div class="stat-value small" id="mine-workid">—</div>
-      <div class="stat-sub">current template</div>
     </div>
     <div class="stat-card csolo">
       <div class="stat-label">Proxy Status</div>
@@ -374,8 +374,8 @@
       <div class="panel-title">Connected Miners</div>
       <div class="panel-badge" id="mine-badge">0</div>
     </div>
-    <div style="display:grid;grid-template-columns:60px 1fr 80px 70px 70px;gap:8px;padding:6px 16px;border-bottom:1px solid var(--border);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px">
-      <span>ID</span><span>Address</span><span style="text-align:right">Difficulty</span><span style="text-align:right">Shares</span><span style="text-align:right">Uptime</span>
+    <div style="display:grid;grid-template-columns:60px 1fr 80px 80px 70px 70px;gap:8px;padding:6px 16px;border-bottom:1px solid var(--border);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px">
+      <span>ID</span><span>Address</span><span style="text-align:right">Hashrate</span><span style="text-align:right">Difficulty</span><span style="text-align:right">Shares</span><span style="text-align:right">Uptime</span>
     </div>
     <div class="scroll-list" style="max-height:220px" id="miner-list">
       <div style="padding:16px;color:var(--muted);text-align:center">Loading…</div>
@@ -734,11 +734,11 @@
       document.getElementById('mine-node').textContent   = d.node   || '—';
       document.getElementById('mine-height').textContent = d.block?.height?.toLocaleString() ?? '—';
       document.getElementById('mine-epoch').textContent  = d.block?.epoch ? parseEpochHex(d.block.epoch) : '—';
-      document.getElementById('mine-workid').textContent = d.block?.workId ?? '—';
       document.getElementById('mine-count').textContent  = d.miners?.count ?? '0';
       document.getElementById('mine-blocks').textContent = d.totals?.blocksFound ?? '0';
       document.getElementById('mine-uptime').textContent = d.uptime ?? '—';
       document.getElementById('mine-accepted').textContent = d.totals?.sharesAccepted ?? '0';
+      document.getElementById('mine-hashrate').textContent = d.hashrate ?? '—';
       document.getElementById('mine-sharerates').textContent =
         `${d.totals?.sharesSubmitted ?? 0} submitted · ${d.totals?.sharesRejected ?? 0} rejected`;
 
@@ -757,19 +757,33 @@
       const byAddr = {};
       miners.forEach(m => {
         const k = m.address || 'unknown';
-        if (!byAddr[k]) byAddr[k] = { conns: 0, shares: 0, accepted: 0, rejected: 0, difficulty: m.difficulty, minUptime: m.uptimeSec, maxUptime: m.uptimeSec, worker: m.worker };
+        if (!byAddr[k]) byAddr[k] = { conns: 0, shares: 0, accepted: 0, rejected: 0, difficulty: m.difficulty, minUptime: m.uptimeSec, maxUptime: m.uptimeSec, worker: m.worker, hashrateHps: 0 };
         byAddr[k].conns++;
-        byAddr[k].shares   += m.sharesSubmitted;
-        byAddr[k].accepted += m.sharesAccepted;
-        byAddr[k].rejected += m.sharesRejected;
+        byAddr[k].shares      += m.sharesSubmitted;
+        byAddr[k].accepted    += m.sharesAccepted;
+        byAddr[k].rejected    += m.sharesRejected;
+        byAddr[k].hashrateHps += m.hashrateHps || 0;
         if (m.uptimeSec < byAddr[k].minUptime) byAddr[k].minUptime = m.uptimeSec;
         if (m.uptimeSec > byAddr[k].maxUptime) byAddr[k].maxUptime = m.uptimeSec;
+      });
+
+      // Format hashrate per group
+      function fmtHr(hps) {
+        if (hps >= 1e12) return (hps/1e12).toFixed(2)+' TH/s';
+        if (hps >= 1e9)  return (hps/1e9).toFixed(2)+' GH/s';
+        if (hps >= 1e6)  return (hps/1e6).toFixed(2)+' MH/s';
+        if (hps >= 1e3)  return (hps/1e3).toFixed(2)+' kH/s';
+        return hps.toFixed(0)+' H/s';
+      }
+      Object.values(byAddr).forEach(info => {
+        info.hashrate = info.hashrateHps > 0 ? fmtHr(info.hashrateHps) : '—';
       });
 
       list.innerHTML = Object.entries(byAddr).map(([addr, info]) => `
         <div class="miner-row">
           <span class="miner-id">${info.conns}×</span>
           <span class="miner-addr">${addr}${info.worker && info.worker !== 'unknown' ? ' · ' + info.worker : ''}</span>
+          <span class="miner-diff" style="color:var(--accent)">${info.hashrate || '—'}</span>
           <span class="miner-diff">${info.difficulty}</span>
           <span class="miner-sh">${info.accepted}/${info.shares}</span>
           <span class="miner-up">${fmtUptime(info.maxUptime)}</span>
