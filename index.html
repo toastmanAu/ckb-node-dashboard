@@ -731,7 +731,13 @@
 
       // Status cards
       document.getElementById('mine-status').textContent = d.status || '—';
-      document.getElementById('mine-node').textContent   = d.node   || '—';
+      document.getElementById('mine-node').textContent   =
+        (d.nodeHealthy === false ? '⚠ NODE OFFLINE — ' : '') + (d.node || '—');
+      if (d.nodeHealthy === false) {
+        document.getElementById('mine-node').style.color = 'var(--danger)';
+      } else {
+        document.getElementById('mine-node').style.color = '';
+      }
       document.getElementById('mine-height').textContent = d.block?.height?.toLocaleString() ?? '—';
       document.getElementById('mine-epoch').textContent  = d.block?.epoch ? parseEpochHex(d.block.epoch) : '—';
       document.getElementById('mine-count').textContent  = d.miners?.count ?? '0';
