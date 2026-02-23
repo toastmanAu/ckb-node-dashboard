@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Node Display</title>
+  <style>
+    :root {
+      --bg:       #0a0e1a;
+      --card:     #111827;
+      --border:   #1f2d45;
+      --accent:   #00d4ff;
+      --green:    #22c55e;
+      --yellow:   #f59e0b;
+      --red:      #ef4444;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+      --font:     'Segoe UI', system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      padding: 16px;
+      overflow-x: hidden;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .logo {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+    }
+    .tagline { font-size: 12px; color: var(--muted); }
+    .clock { font-size: 22px; font-weight: 600; color: var(--text); }
+    .date-str { font-size: 11px; color: var(--muted); text-align: right; }
+
+    /* ── Grid ── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--accent);
+      opacity: 0.6;
+    }
+    .card.green::before  { background: var(--green); }
+    .card.yellow::before { background: var(--yellow); }
+    .card.red::before    { background: var(--red); }
+
+    .card-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .card-title .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      display: inline-block;
+    }
+    .dot.green  { background: var(--green);  box-shadow: 0 0 6px var(--green); }
+    .dot.yellow { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+    .dot.red    { background: var(--red);    box-shadow: 0 0 6px var(--red); }
+
+    .big-num {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+      margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .big-num.green  { color: var(--green); }
+    .big-num.yellow { color: var(--yellow); }
+    .big-num.white  { color: var(--text); }
+
+    .sub {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .sub span { color: var(--text); }
+
+    /* ── Stat rows ── */
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { color: var(--muted); }
+    .stat-val   { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .stat-val.green  { color: var(--green); }
+    .stat-val.yellow { color: var(--yellow); }
+    .stat-val.red    { color: var(--red); }
+    .stat-val.accent { color: var(--accent); }
+
+    /* ── Miner list ── */
+    .miner-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 0;
+      font-size: 11px;
+      border-bottom: 1px solid var(--border);
+    }
+    .miner-row:last-child { border-bottom: none; }
+    .miner-name { color: var(--text); font-weight: 600; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .miner-meta { color: var(--muted); font-size: 10px; }
+    .miner-hash { color: var(--accent); font-weight: 700; font-size: 12px; }
+
+    /* ── Ticker bar ── */
+    .ticker {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      display: flex;
+      gap: 28px;
+      align-items: center;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+    .ticker-item { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .ticker-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .ticker-val   { font-size: 14px; font-weight: 700; }
+
+    /* ── Status badge ── */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge.green  { background: rgba(34,197,94,0.15);  color: var(--green);  border: 1px solid rgba(34,197,94,0.3); }
+    .badge.yellow { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); }
+    .badge.red    { background: rgba(239,68,68,0.15);  color: var(--red);    border: 1px solid rgba(239,68,68,0.3); }
+
+    /* ── Epoch bar ── */
+    .epoch-wrap { margin-top: 8px; }
+    .epoch-bar-bg {
+      background: var(--border);
+      border-radius: 99px;
+      height: 5px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .epoch-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--green));
+      border-radius: 99px;
+      transition: width 0.5s ease;
+    }
+
+    /* ── Uptime strip ── */
+    .uptime-strip {
+      font-size: 10px;
+      color: var(--muted);
+      text-align: right;
+      margin-top: 6px;
+    }
+    .uptime-strip span { color: var(--text); }
+
+    /* ── Responsive (Echo Show 8 is 1280×800) ── */
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: repeat(2, 1fr); }
+      .big-num { font-size: 22px; }
+    }
+    @media (max-width: 600px) {
+      .grid { grid-template-columns: 1fr; }
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    /* ── Pulse animation for live dot ── */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .dot.live { animation: pulse 2s ease-in-out infinite; }
+
+    /* ── Error overlay ── */
+    .err { color: var(--red); font-size: 11px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div>
+        <div class="logo">⬡ NODE DISPLAY</div>
+        <div class="tagline">Phill's infrastructure · Adelaide</div>
+      </div>
+    </div>
+    <div style="text-align:right">
+      <div class="clock" id="clock">--:--:--</div>
+      <div class="date-str" id="dateStr">--</div>
+    </div>
+  </div>
+
+  <!-- Row 1: CKB Node | Mining | Peers -->
+  <div class="grid">
+
+    <!-- CKB Node -->
+    <div class="card" id="card-node">
+      <div class="card-title">
+        <span class="dot green live" id="dot-node"></span>
+        CKB Node
+      </div>
+      <div class="big-num" id="block-height">—</div>
+      <div class="sub">Block height</div>
+      <div class="epoch-wrap">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted)">
+          <span>Epoch <span id="epoch-num" style="color:var(--text)">—</span></span>
+          <span id="epoch-pct" style="color:var(--accent)">—</span>
+        </div>
+        <div class="epoch-bar-bg">
+          <div class="epoch-bar-fill" id="epoch-bar" style="width:0%"></div>
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <div class="stat-row">
+          <span class="stat-label">Block time</span>
+          <span class="stat-val accent" id="block-time">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Network HR</span>
+          <span class="stat-val" id="net-hr">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Peers</span>
+          <span class="stat-val green" id="peer-count">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Solo Mining -->
+    <div class="card" id="card-mining">
+      <div class="card-title">
+        <span class="dot yellow live" id="dot-mining"></span>
+        Solo Mining
+      </div>
+      <div class="big-num white" id="miner-count">—</div>
+      <div class="sub" style="margin-bottom:10px">Active miner<span id="miner-plural"></span></div>
+      <div class="stat-row">
+        <span class="stat-label">Status</span>
+        <span class="stat-val" id="mining-status">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Hashrate</span>
+        <span class="stat-val accent" id="mining-hr">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Blocks found</span>
+        <span class="stat-val" id="blocks-found">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Uptime</span>
+        <span class="stat-val" id="mining-uptime">—</span>
+      </div>
+      <div id="miner-list" style="margin-top:8px"></div>
+    </div>
+
+    <!-- Services -->
+    <div class="card" id="card-services">
+      <div class="card-title">
+        <span class="dot green" id="dot-services"></span>
+        Services
+      </div>
+      <div id="service-list">
+        <div class="stat-row">
+          <span class="stat-label">Dashboard</span>
+          <span class="stat-val" id="svc-dashboard">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Stratum proxy</span>
+          <span class="stat-val" id="svc-stratum">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Whale bot</span>
+          <span class="stat-val" id="svc-whale">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">UV Tracker</span>
+          <span class="stat-val" id="svc-uv">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Fiber (ckbnode)</span>
+          <span class="stat-val" id="svc-fiber-ckb">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Fiber (N100)</span>
+          <span class="stat-val" id="svc-fiber-n100">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Anti-scam bot</span>
+          <span class="stat-val" id="svc-antiscam">—</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Row 2: CKB Price | Mining Miner detail -->
+  <div class="grid-2">
+
+    <!-- CKB Price -->
+    <div class="card green">
+      <div class="card-title">
+        <span class="dot green live"></span>
+        CKB Price
+      </div>
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <div class="big-num green" id="ckb-price">—</div>
+        <div class="badge" id="ckb-change-badge">—</div>
+      </div>
+      <div class="sub" style="margin-top:4px">USD · 24h change: <span id="ckb-change">—</span></div>
+      <div style="margin-top:10px">
+        <div class="stat-row">
+          <span class="stat-label">Market cap</span>
+          <span class="stat-val" id="ckb-mcap">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">24h volume</span>
+          <span class="stat-val" id="ckb-vol">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Rank</span>
+          <span class="stat-val" id="ckb-rank">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fiber channel -->
+    <div class="card" id="card-fiber">
+      <div class="card-title">
+        <span class="dot" id="dot-fiber"></span>
+        Fiber Network
+      </div>
+      <div id="fiber-content">
+        <div class="stat-row">
+          <span class="stat-label">ckbnode node</span>
+          <span class="stat-val" id="fiber-ckb-status">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">N100 node</span>
+          <span class="stat-val" id="fiber-n100-status">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">ckbnode peers</span>
+          <span class="stat-val" id="fiber-ckb-peers">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">N100 peers</span>
+          <span class="stat-val" id="fiber-n100-peers">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">ckbnode channels</span>
+          <span class="stat-val" id="fiber-ckb-channels">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">N100 channels</span>
+          <span class="stat-val" id="fiber-n100-channels">—</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Ticker bar -->
+  <div class="ticker">
+    <div class="ticker-item">
+      <span class="ticker-label">BTC</span>
+      <span class="ticker-val accent" id="btc-price">—</span>
+    </div>
+    <div class="ticker-item">
+      <span class="ticker-label">ETH</span>
+      <span class="ticker-val" id="eth-price">—</span>
+    </div>
+    <div class="ticker-item">
+      <span class="ticker-label">CKB</span>
+      <span class="ticker-val green" id="ckb-ticker">—</span>
+    </div>
+    <div class="ticker-item" style="margin-left:auto">
+      <span class="ticker-label" style="font-size:9px">Last update</span>
+      <span class="ticker-val" style="font-size:12px;color:var(--muted)" id="last-update">—</span>
+    </div>
+  </div>
+
+  <div class="uptime-strip">
+    Dashboard uptime: <span id="dash-uptime">—</span>
+  </div>
+
+<script>
+// ── Clock ──────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toLocaleTimeString('en-AU', { hour12: false });
+  document.getElementById('dateStr').textContent = now.toLocaleDateString('en-AU', {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
+  });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function el(id)       { return document.getElementById(id); }
+function set(id, v)   { const e = el(id); if (e) e.textContent = v; }
+function cls(id, c)   { const e = el(id); if (e) { e.className = e.className.replace(/\b(green|yellow|red|accent|white)\b/g, '').trim() + ' ' + c; } }
+function dotCls(id,c) { const e = el(id); if (e) e.className = 'dot ' + c + ' live'; }
+function fmtNum(n, decimals=2) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: decimals, minimumFractionDigits: decimals });
+}
+function fmtLarge(n) {
+  if (!n) return '—';
+  if (n >= 1e9) return '$' + (n/1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M';
+  return '$' + n.toLocaleString();
+}
+
+// ── Fetch /api/show-data ───────────────────────────────────────────────────
+async function fetchShowData() {
+  try {
+    const r = await fetch('/api/show-data');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch(e) {
+    console.warn('show-data fetch failed:', e.message);
+    return null;
+  }
+}
+
+async function fetchPrice() {
+  try {
+    const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=nervos-network,bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true&include_market_cap=true&include_24hr_vol=true');
+    if (!r.ok) return null;
+    return await r.json();
+  } catch(e) { return null; }
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function renderNode(d) {
+  if (!d) return;
+  const h = d.tipHeight;
+  set('block-height', h ? h.toLocaleString() : '—');
+
+  if (d.epochNum !== undefined) {
+    set('epoch-num', d.epochNum);
+    const pct = Math.round(d.epochPct * 100);
+    set('epoch-pct', pct + '%');
+    el('epoch-bar').style.width = pct + '%';
+  }
+
+  set('block-time', d.avgBlockTimeSec ? d.avgBlockTimeSec + 's' : '—');
+  set('net-hr', d.networkHashrate || '—');
+  const peers = d.peers ?? '—';
+  set('peer-count', peers);
+  cls('peer-count', peers < 5 ? 'red' : peers < 10 ? 'yellow' : 'green');
+}
+
+function renderMining(m) {
+  if (!m) return;
+  set('miner-count', m.miners?.count ?? '—');
+  set('miner-plural', m.miners?.count === 1 ? '' : 's');
+  const status = m.status || (m.nodeHealthy ? 'active' : 'offline');
+  set('mining-status', status.toUpperCase());
+  cls('mining-status', status === 'active' ? 'green' : 'red');
+  set('mining-hr', m.hashrate || '0 H/s');
+  set('blocks-found', m.totals?.blocksFound ?? '0');
+  set('mining-uptime', m.uptime || '—');
+  dotCls('dot-mining', m.nodeHealthy ? 'yellow' : 'red');
+
+  // Miner list
+  const list = el('miner-list');
+  if (m.miners?.list?.length) {
+    list.innerHTML = m.miners.list.map(mn => {
+      const name = mn.worker.split('.').pop() || mn.worker;
+      const upMins = Math.floor((mn.uptimeSec||0) / 60);
+      return `<div class="miner-row">
+        <div>
+          <div class="miner-name">${name}</div>
+          <div class="miner-meta">${mn.address} · up ${upMins}m</div>
+        </div>
+        <div class="miner-hash">${mn.hashrate || '0 H/s'}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+function renderServices(s) {
+  if (!s) return;
+  function svcBadge(ok) {
+    return ok ? '<span style="color:var(--green);font-weight:700">● UP</span>'
+              : '<span style="color:var(--red);font-weight:700">● DOWN</span>';
+  }
+  const ids = {
+    'svc-dashboard': s.dashboard,
+    'svc-stratum':   s.stratum,
+    'svc-whale':     s.whaleBot,
+    'svc-uv':        s.uvTracker,
+    'svc-fiber-ckb': s.fiberCkb,
+    'svc-fiber-n100':s.fiberN100,
+    'svc-antiscam':  s.antiScam,
+  };
+  for (const [id, ok] of Object.entries(ids)) {
+    const e = el(id);
+    if (e) e.innerHTML = svcBadge(ok);
+  }
+  // Overall services dot
+  const allOk = Object.values(ids).every(Boolean);
+  const someDown = Object.values(ids).some(v => v === false);
+  dotCls('dot-services', allOk ? 'green' : someDown ? 'red' : 'yellow');
+}
+
+function renderFiber(f) {
+  if (!f) return;
+  function fiberStatus(ok) {
+    return ok ? '<span style="color:var(--green);font-weight:700">RUNNING</span>'
+              : '<span style="color:var(--red);font-weight:700">DOWN</span>';
+  }
+  el('fiber-ckb-status').innerHTML  = fiberStatus(f.ckbNodeRunning);
+  el('fiber-n100-status').innerHTML = fiberStatus(f.n100Running);
+  set('fiber-ckb-peers',     f.ckbPeers     ?? '—');
+  set('fiber-n100-peers',    f.n100Peers    ?? '—');
+  set('fiber-ckb-channels',  f.ckbChannels  ?? '—');
+  set('fiber-n100-channels', f.n100Channels ?? '—');
+  dotCls('dot-fiber', (f.ckbNodeRunning && f.n100Running) ? 'green' : 'yellow');
+}
+
+function renderPrice(p) {
+  if (!p) return;
+  const ckb = p['nervos-network'];
+  const btc = p['bitcoin'];
+  const eth = p['ethereum'];
+
+  if (ckb) {
+    const price = ckb.usd;
+    set('ckb-price', price < 0.001 ? price.toFixed(6) : price < 0.01 ? price.toFixed(5) : price.toFixed(4));
+    const chg = ckb.usd_24h_change;
+    if (chg !== undefined) {
+      const sign = chg >= 0 ? '+' : '';
+      set('ckb-change', sign + chg.toFixed(2) + '%');
+      const badge = el('ckb-change-badge');
+      badge.textContent = sign + chg.toFixed(2) + '%';
+      badge.className = 'badge ' + (chg >= 0 ? 'green' : 'red');
+    }
+    set('ckb-mcap', fmtLarge(ckb.usd_market_cap));
+    set('ckb-vol',  fmtLarge(ckb.usd_24h_vol));
+    set('ckb-ticker', price < 0.001 ? '$'+price.toFixed(6) : '$'+price.toFixed(4));
+  }
+  if (btc) set('btc-price', '$' + Math.round(btc.usd).toLocaleString());
+  if (eth) set('eth-price', '$' + Math.round(eth.usd).toLocaleString());
+}
+
+// ── Main update loop ──────────────────────────────────────────────────────
+let priceRefreshCounter = 0;
+let cachedPrice = null;
+
+async function update() {
+  const [data] = await Promise.all([ fetchShowData() ]);
+
+  if (data) {
+    renderNode(data.node);
+    renderMining(data.mining);
+    renderServices(data.services);
+    renderFiber(data.fiber);
+    set('dash-uptime', data.dashUptime || '—');
+    set('last-update', new Date().toLocaleTimeString('en-AU', { hour12: false }));
+  }
+
+  // Price: refresh every ~60s (every 6 × 10s cycles)
+  priceRefreshCounter++;
+  if (priceRefreshCounter >= 6 || !cachedPrice) {
+    priceRefreshCounter = 0;
+    cachedPrice = await fetchPrice();
+  }
+  if (cachedPrice) renderPrice(cachedPrice);
+  if (data?.ckbRank) set('ckb-rank', '#' + data.ckbRank);
+}
+
+update();
+setInterval(update, 10000);
+</script>
+</body>
+</html>

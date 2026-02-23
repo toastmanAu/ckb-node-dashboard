@@ -24,6 +24,11 @@ const CKB_HOST    = '192.168.68.87';
 const CKB_PORT    = 8114;
 const PROXY_HOST  = '127.0.0.1';
 const PROXY_PORT  = 8081;
+const FIBER_CKB_HOST  = '192.168.68.87'; // SSH tunnel: n100:8237 → ckbnode:8227
+const FIBER_N100_HOST = '192.168.68.91';
+const FIBER_CKB_PORT  = 8237;            // via SSH tunnel on N100
+const FIBER_N100_PORT = 8226;
+const N100_HOST       = '192.168.68.91';
 const DIR         = __dirname;
 
 // ── Internal CKB RPC helpers ──────────────────────────────────────────────
@@ -204,6 +209,172 @@ function proxyRpc(body, res) {
   req.end();
 }
 
+// ── Show data aggregator ──────────────────────────────────────────────────
+// Fetches all service states and returns a unified JSON blob for show.html
+
+function httpGet(hostname, port, path, timeoutMs = 4000) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ hostname, port, path, method: 'GET', timeout: timeoutMs }, (res) => {
+      let data = '';
+      res.on('data', d => { data += d; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch(e) { resolve({ _raw: data.slice(0, 200) }); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.end();
+  });
+}
+
+function httpPost(hostname, port, path, bodyObj, timeoutMs = 4000) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(bodyObj);
+    const req = http.request({
+      hostname, port, path, method: 'POST', timeout: timeoutMs,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, (res) => {
+      let data = '';
+      res.on('data', d => { data += d; });
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.write(body);
+    req.end();
+  });
+}
+
+async function safeGet(hostname, port, path, timeout) {
+  try { return await httpGet(hostname, port, path, timeout); }
+  catch(e) { return null; }
+}
+
+async function safePost(hostname, port, path, body, timeout) {
+  try { return await httpPost(hostname, port, path, body, timeout); }
+  catch(e) { return null; }
+}
+
+let showDataCache     = null;
+let showDataCacheTime = 0;
+const SHOW_TTL        = 8000; // 8s cache
+
+async function buildShowData() {
+  const now = Date.now();
+  if (showDataCache && (now - showDataCacheTime) < SHOW_TTL) return showDataCache;
+
+  // Parallel fetch everything
+  const [
+    hist,
+    mining,
+    peers,
+    dashHealth,
+    uvHealth,
+    fiberCkbInfo,
+    fiberN100Info,
+    antiscamPs,
+  ] = await Promise.all([
+    buildHistory().catch(() => null),
+    safeGet(PROXY_HOST, PROXY_PORT, '/', 3000),
+    rpcCall('get_peers').catch(() => null),
+    safeGet('127.0.0.1', PORT, '/health', 2000),
+    safeGet('127.0.0.1', 9988, '/', 2000),
+    // Fiber ckbnode RPC via SSH tunnel (N100:8237 → ckbnode:8227)
+    safePost(N100_HOST, FIBER_CKB_PORT, '/', { id: 1, jsonrpc: '2.0', method: 'get_node_info', params: [] }, 3000),
+    // Fiber N100 local RPC
+    safePost('127.0.0.1', FIBER_N100_PORT, '/', { id: 1, jsonrpc: '2.0', method: 'get_node_info', params: [] }, 3000),
+    // Anti-scam: check process via existence of PID file or log
+    safeGet('127.0.0.1', 9999, '/health', 1000), // antiscam has no HTTP, will fail = null
+  ]);
+
+  // Fiber channels
+  const [fiberCkbChannels, fiberN100Channels] = await Promise.all([
+    safePost(N100_HOST, FIBER_CKB_PORT, '/', { id: 2, jsonrpc: '2.0', method: 'list_channels', params: [{}] }, 3000),
+    safePost('127.0.0.1', FIBER_N100_PORT, '/', { id: 2, jsonrpc: '2.0', method: 'list_channels', params: [{}] }, 3000),
+  ]);
+
+  // Parse epoch from hist
+  let epochNum, epochPct;
+  if (hist) {
+    // epoch field from /history is in tip header — re-fetch from rpc
+    try {
+      const tip = await rpcCall('get_tip_header');
+      const epochHex = tip.epoch; // e.g. 0x5440242003592
+      // epoch encoding: bits [0:15] = block index in epoch, [16:31] = epoch length, [32:47] = epoch number
+      const epochVal = BigInt('0x' + epochHex.replace(/^0x/,''));
+      epochNum = Number((epochVal >> 32n) & 0xFFFFn);
+      const idx    = Number(epochVal & 0xFFFFn);
+      const length = Number((epochVal >> 16n) & 0xFFFFn);
+      epochPct = length > 0 ? idx / length : 0;
+    } catch(e) { /* skip */ }
+  }
+
+  // Whale bot: check if process is running (via PID file)
+  let whaleBotRunning = false;
+  try {
+    const pid = require('fs').readFileSync('/home/phill/ckb-whale-bot/whale-bot.pid', 'utf8').trim();
+    require('fs').accessSync('/proc/' + pid);
+    whaleBotRunning = true;
+  } catch(e) { whaleBotRunning = false; }
+
+  // Anti-scam: check log file recency (updated = running)
+  let antiScamRunning = false;
+  try {
+    const stat = require('fs').statSync('/home/phill/ckb-antiscam/antiscam.log');
+    // If log was modified in last 2 hours, consider it running
+    antiScamRunning = (Date.now() - stat.mtimeMs) < 2 * 60 * 60 * 1000;
+  } catch(e) { antiScamRunning = false; }
+
+  const result = {
+    node: hist ? {
+      tipHeight:       hist.tipHeight,
+      avgBlockTimeSec: hist.avgBlockTimeSec,
+      networkHashrate: hist.networkHashrate,
+      epochNum,
+      epochPct,
+      peers: Array.isArray(peers) ? peers.length : null,
+    } : null,
+
+    mining: mining || null,
+
+    services: {
+      dashboard: !!dashHealth?.ok,
+      stratum:   !!(mining && mining.nodeHealthy !== false),
+      whaleBot:  whaleBotRunning,
+      uvTracker: !!uvHealth,
+      fiberCkb:  !!(fiberCkbInfo?.result),
+      fiberN100: !!(fiberN100Info?.result),
+      antiScam:  antiScamRunning,
+    },
+
+    fiber: {
+      ckbNodeRunning: !!(fiberCkbInfo?.result),
+      n100Running:    !!(fiberN100Info?.result),
+      ckbPeers:       fiberCkbInfo?.result?.connected_peers ?? null,
+      n100Peers:      fiberN100Info?.result?.connected_peers ?? null,
+      ckbChannels:    fiberCkbChannels?.result?.channels?.length ?? null,
+      n100Channels:   fiberN100Channels?.result?.channels?.length ?? null,
+    },
+
+    dashUptime: dashHealth ? formatUptime(dashHealth.uptime) : '—',
+  };
+
+  showDataCache     = result;
+  showDataCacheTime = now;
+  return result;
+}
+
+function formatUptime(secs) {
+  if (!secs) return '—';
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 // ── Static file server ────────────────────────────────────────────────────
 const MIME = {
   '.html': 'text/html', '.js': 'application/javascript',
@@ -248,6 +419,24 @@ const server = http.createServer((req, res) => {
   if (req.url === '/health' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, uptime: Math.floor(process.uptime()) }));
+    return;
+  }
+
+  if (req.url === '/show' && req.method === 'GET') {
+    serveStatic('/show.html', res);
+    return;
+  }
+
+  if (req.url === '/api/show-data' && req.method === 'GET') {
+    buildShowData()
+      .then(data => {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify(data));
+      })
+      .catch(e => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      });
     return;
   }
 
