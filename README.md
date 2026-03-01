@@ -33,7 +33,7 @@ Built for **Ubuntu 22.04 arm64** — runs great on Orange Pi 3B, Orange Pi 5, Ra
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/ckb-node-dashboard.git
+git clone https://github.com/toastmanAu/ckb-node-dashboard.git
 cd ckb-node-dashboard
 
 # Run setup (prompts for your node's IP address)
