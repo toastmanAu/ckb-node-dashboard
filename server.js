@@ -20,11 +20,11 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const PORT        = 8080;
-const CKB_HOST    = '192.168.68.87';
+const CKB_HOST    = '192.168.68.105';
 const CKB_PORT    = 8114;
 const PROXY_HOST  = '127.0.0.1';
 const PROXY_PORT  = 8081;
-const FIBER_CKB_HOST  = '192.168.68.87'; // SSH tunnel: n100:8237 → ckbnode:8227
+const FIBER_CKB_HOST  = '192.168.68.105'; // SSH tunnel: n100:8237 → ckbnode:8227
 const FIBER_N100_HOST = '192.168.68.91';
 const FIBER_CKB_PORT  = 8237;            // via SSH tunnel on N100
 const FIBER_N100_PORT = 8226;
